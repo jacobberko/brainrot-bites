@@ -13,10 +13,11 @@ interface VideoPlayerProps {
 export function VideoPlayer({ clips, onShuffle, onReset }: VideoPlayerProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
-  const [isMuted, setIsMuted] = useState(false);
+  const [isMuted, setIsMuted] = useState(true);
   const [progress, setProgress] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
-  const progressInterval = useRef<NodeJS.Timeout>();
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const progressInterval = useRef<ReturnType<typeof setInterval>>();
 
   const currentClip = clips[currentIndex];
 
@@ -34,6 +35,25 @@ export function VideoPlayer({ clips, onShuffle, onReset }: VideoPlayerProps) {
     }
   }, [currentIndex]);
 
+  // Control video playback
+  useEffect(() => {
+    if (videoRef.current) {
+      if (isPlaying) {
+        videoRef.current.play().catch(() => {});
+      } else {
+        videoRef.current.pause();
+      }
+    }
+  }, [isPlaying, currentIndex]);
+
+  // Control video mute
+  useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.muted = isMuted;
+    }
+  }, [isMuted]);
+
+  // Progress timer for clip duration
   useEffect(() => {
     if (isPlaying && currentClip) {
       progressInterval.current = setInterval(() => {
@@ -104,13 +124,18 @@ export function VideoPlayer({ clips, onShuffle, onReset }: VideoPlayerProps) {
       ref={containerRef}
       className="relative w-full max-w-sm mx-auto aspect-[9/16] rounded-3xl overflow-hidden glass animate-scale-in"
     >
-      {/* Background Image */}
-      <div 
-        className="absolute inset-0 bg-cover bg-center transition-all duration-500"
-        style={{ backgroundImage: `url(${currentClip.backgroundUrl})` }}
-      >
-        <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/80" />
-      </div>
+      {/* Background Video */}
+      <video
+        ref={videoRef}
+        key={currentClip.backgroundUrl}
+        src={currentClip.backgroundUrl}
+        className="absolute inset-0 w-full h-full object-cover"
+        autoPlay
+        loop
+        muted={isMuted}
+        playsInline
+      />
+      <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/80" />
 
       {/* Progress Bars */}
       <div className="absolute top-4 left-4 right-4 flex gap-1.5 z-20">
