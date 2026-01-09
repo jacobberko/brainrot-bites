@@ -1,13 +1,34 @@
 import { useState, useCallback } from 'react';
 import { Upload, FileText, Loader2, Sparkles } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { UploadState } from '@/types';
 import { cn } from '@/lib/utils';
+import * as pdfjsLib from 'pdfjs-dist';
+
+// Set the worker source for pdf.js
+pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.worker.min.mjs`;
 
 interface FileUploadProps {
   onFileContent: (content: string, fileName: string) => void;
   uploadState: UploadState;
   setUploadState: (state: UploadState) => void;
+}
+
+async function extractTextFromPDF(file: File): Promise<string> {
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  
+  let fullText = '';
+  
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const textContent = await page.getTextContent();
+    const pageText = textContent.items
+      .map((item: any) => item.str)
+      .join(' ');
+    fullText += pageText + '\n\n';
+  }
+  
+  return fullText;
 }
 
 export function FileUpload({ onFileContent, uploadState, setUploadState }: FileUploadProps) {
@@ -18,7 +39,7 @@ export function FileUpload({ onFileContent, uploadState, setUploadState }: FileU
 
     const validTypes = ['text/plain', 'application/pdf', 'text/markdown', '.txt', '.md', '.pdf'];
     const isValid = validTypes.some(type => 
-      file.type.includes(type) || file.name.endsWith('.txt') || file.name.endsWith('.md')
+      file.type.includes(type) || file.name.endsWith('.txt') || file.name.endsWith('.md') || file.name.endsWith('.pdf')
     );
 
     if (!isValid) {
@@ -37,16 +58,27 @@ export function FileUpload({ onFileContent, uploadState, setUploadState }: FileU
     });
 
     try {
-      const text = await file.text();
+      let text: string;
+      
+      if (file.name.endsWith('.pdf') || file.type === 'application/pdf') {
+        setUploadState({
+          status: 'parsing',
+          progress: 50,
+          message: 'Extracting text from PDF...',
+        });
+        text = await extractTextFromPDF(file);
+      } else {
+        text = await file.text();
+      }
       
       setUploadState({
         status: 'parsing',
-        progress: 60,
+        progress: 80,
         message: 'Parsing content...',
       });
 
       // Simulate parsing delay for UX
-      await new Promise(resolve => setTimeout(resolve, 800));
+      await new Promise(resolve => setTimeout(resolve, 500));
 
       setUploadState({
         status: 'complete',
@@ -56,6 +88,7 @@ export function FileUpload({ onFileContent, uploadState, setUploadState }: FileU
 
       onFileContent(text, file.name);
     } catch (error) {
+      console.error('File parsing error:', error);
       setUploadState({
         status: 'error',
         progress: 0,
