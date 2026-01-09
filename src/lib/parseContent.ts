@@ -1,14 +1,16 @@
 import { VideoClip, VideoDuration } from '@/types';
 
+// Import video assets
+import bgVideo1 from '@/assets/videos/bg-1.mp4';
+import bgVideo2 from '@/assets/videos/bg-2.mp4';
+import bgVideo3 from '@/assets/videos/bg-3.mp4';
+import bgVideo4 from '@/assets/videos/bg-4.mp4';
+
 const BACKGROUND_VIDEOS = [
-  'https://images.unsplash.com/photo-1557683316-973673baf926?w=400&h=700&fit=crop',
-  'https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=400&h=700&fit=crop',
-  'https://images.unsplash.com/photo-1558591710-4b4a1ae0f04d?w=400&h=700&fit=crop',
-  'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=400&h=700&fit=crop',
-  'https://images.unsplash.com/photo-1614850523296-d8c1af93d400?w=400&h=700&fit=crop',
-  'https://images.unsplash.com/photo-1620121692029-d088224ddc74?w=400&h=700&fit=crop',
-  'https://images.unsplash.com/photo-1635070041078-e363dbe005cb?w=400&h=700&fit=crop',
-  'https://images.unsplash.com/photo-1614851099511-773084f6911d?w=400&h=700&fit=crop',
+  bgVideo1,
+  bgVideo2,
+  bgVideo3,
+  bgVideo4,
 ];
 
 function getRandomBackground(): string {
