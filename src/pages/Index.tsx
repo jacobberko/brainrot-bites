@@ -6,9 +6,10 @@ import { GenerateButton } from '@/components/GenerateButton';
 import { VideoPlayer } from '@/components/VideoPlayer';
 import { StatsBar } from '@/components/StatsBar';
 import { VideoClip, VideoDuration, UploadState } from '@/types';
-import { parseTextToClips, shuffleClips } from '@/lib/parseContent';
+import { summarizeTextToClips, shuffleClips } from '@/lib/summarizeContent';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 
 export default function Index() {
   const [fileContent, setFileContent] = useState<string>('');
@@ -27,19 +28,28 @@ export default function Index() {
     setFileName(name);
   }, []);
 
+  const { toast } = useToast();
+
   const handleGenerate = useCallback(async () => {
     if (!fileContent) return;
 
     setIsGenerating(true);
     
-    // Simulate generation delay
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    const generatedClips = parseTextToClips(fileContent, duration);
-    const shuffledClips = shuffleClips(generatedClips);
-    setClips(shuffledClips);
-    setIsGenerating(false);
-  }, [fileContent, duration]);
+    try {
+      const generatedClips = await summarizeTextToClips(fileContent, duration);
+      const shuffledClips = shuffleClips(generatedClips);
+      setClips(shuffledClips);
+    } catch (error) {
+      console.error('Generation error:', error);
+      toast({
+        title: 'Generation Failed',
+        description: error instanceof Error ? error.message : 'Failed to summarize content',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsGenerating(false);
+    }
+  }, [fileContent, duration, toast]);
 
   const handleShuffle = useCallback(() => {
     setClips(prev => shuffleClips(prev));
