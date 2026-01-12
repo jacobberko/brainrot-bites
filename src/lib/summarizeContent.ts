@@ -1,20 +1,18 @@
 import { supabase } from '@/integrations/supabase/client';
 import { VideoClip, VideoDuration } from '@/types';
 
-// Import video assets
-import bgVideo1 from '@/assets/videos/bg-1.mp4';
-import bgVideo2 from '@/assets/videos/bg-2.mp4';
-import bgVideo3 from '@/assets/videos/bg-3.mp4';
-import bgVideo4 from '@/assets/videos/bg-4.mp4';
+// Import video assets - Classic brainrot backgrounds
+import subwaySurfers from '@/assets/videos/subway-surfers.mp4';
+import minecraftParkour from '@/assets/videos/minecraft-parkour.mp4';
 
-const BACKGROUND_VIDEOS = [bgVideo1, bgVideo2, bgVideo3, bgVideo4];
+const BACKGROUND_VIDEOS = [subwaySurfers, minecraftParkour];
 
 function getRandomBackground(): string {
   return BACKGROUND_VIDEOS[Math.floor(Math.random() * BACKGROUND_VIDEOS.length)];
 }
 
 export async function summarizeTextToClips(
-  text: string, 
+  text: string,
   duration: VideoDuration
 ): Promise<VideoClip[]> {
   const { data, error } = await supabase.functions.invoke('summarize-content', {

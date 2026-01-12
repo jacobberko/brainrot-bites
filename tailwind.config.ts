@@ -14,7 +14,7 @@ export default {
     },
     extend: {
       fontFamily: {
-        display: ['Space Grotesk', 'sans-serif'],
+        display: ['Outfit', 'Space Grotesk', 'sans-serif'],
         body: ['Inter', 'sans-serif'],
       },
       colors: {
@@ -61,12 +61,7 @@ export default {
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
         },
-        neon: {
-          pink: "hsl(328 100% 54%)",
-          cyan: "hsl(185 100% 50%)",
-          lime: "hsl(83 100% 50%)",
-          purple: "hsl(280 100% 60%)",
-        },
+        /* Removed hardcoded neon object to force usage of css vars */
       },
       borderRadius: {
         lg: "var(--radius)",

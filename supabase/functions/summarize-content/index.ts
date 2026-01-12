@@ -5,6 +5,9 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Helper for linear/exponential backoff
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -20,76 +23,96 @@ serve(async (req) => {
       );
     }
 
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-    if (!LOVABLE_API_KEY) {
-      console.error('LOVABLE_API_KEY not configured');
+    const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
+    if (!GEMINI_API_KEY) {
+      console.error('GEMINI_API_KEY not configured');
       return new Response(
         JSON.stringify({ error: 'AI service not configured' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Determine number of chunks based on duration
-    const chunkCount = duration === 15 ? 8 : duration === 30 ? 5 : 3;
-    
-    console.log(`Summarizing content for ${duration}s clips, targeting ${chunkCount} summaries`);
+    // Dynamic chunk count based on text length
+    // 1 clip per ~500 characters, min 5, max 50 (for long files)
+    const targetChunkCount = Math.min(50, Math.max(5, Math.ceil(text.length / 500)));
 
-    const systemPrompt = `You are a study content summarizer that creates bite-sized, memorable learning chunks. Your goal is to transform study notes into short, punchy summaries that are easy to memorize.
+    console.log(`Summarizing content (length: ${text.length}). Targeting ~${targetChunkCount} summaries.`);
+
+    const systemPrompt = `You are a viral content creator that turns long study notes into addictive, bite-sized "brainrot" style scripts.
+Your goal is to extract the MOST interesting facts, definitions, and concepts and turn them into short, punchy hooks.
 
 Rules:
-- Create exactly ${chunkCount} separate summaries from the provided text
-- Each summary should be 1-2 sentences MAX (under 30 words)
-- Use simple, direct language
-- Focus on the KEY facts, concepts, or definitions
-- Make each summary standalone and memorable
-- Use active voice and present tense when possible
-- Include specific numbers, dates, or terms when relevant
-- Format as a JSON array of strings
+- Create ALMOST EXACTLY ${targetChunkCount} separate clips (between ${Math.floor(targetChunkCount * 0.8)} and ${targetChunkCount} clips)
+- EXTREMELY IMPORTANT: Return a raw JSON array of strings. Do not use Markdown code blocks.
+- Each clip must be UNDER 30 words.
+- Use GEN Z slang occasionally but accurately (e.g., "cooked", "based", "real", "fr", "no cap").
+- Make it sound like a fast-paced TikTok voiceover.
+- Ignore boring filler, focus on the "tea" (key facts).
+- Example style: "Mitochondria is the powerhouse of the cell, no cap. It's basically the battery pack for your whole life."
 
-Example output format:
-["The mitochondria is the powerhouse of the cell, producing ATP through cellular respiration.", "DNA has a double helix structure discovered by Watson and Crick in 1953."]`;
+Format:
+["Clip 1 text...", "Clip 2 text...", ...]`;
 
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    // CHANGED: Use gemini-1.5-flash-latest for stability and cost
+    const MODEL = 'gemini-1.5-flash-latest';
+    const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+
+    // Robust fetch with retry logic for 429s
+    const fetchWithRetry = async (url: string, options: any, retries = 3, backoff = 1000) => {
+      try {
+        const response = await fetch(url, options);
+
+        if (response.status === 429) {
+          if (retries > 0) {
+            console.log(`Rate limit hit. Retrying in ${backoff}ms... (${retries} retries left)`);
+            await delay(backoff);
+            return fetchWithRetry(url, options, retries - 1, backoff * 2); // Exponential backoff
+          } else {
+            console.error("Max retries exceeded for rate limit.");
+          }
+        }
+
+        return response;
+      } catch (error) {
+        if (retries > 0) {
+          console.log(`Network error: ${error}. Retrying in ${backoff}ms...`);
+          await delay(backoff);
+          return fetchWithRetry(url, options, retries - 1, backoff * 2);
+        }
+        throw error;
+      }
+    };
+
+    console.log(`Calling Gemini Model: ${MODEL}`);
+
+    const response = await fetchWithRetry(API_URL, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-3-flash-preview',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: `Summarize this study material into ${chunkCount} bite-sized learning chunks:\n\n${text.slice(0, 15000)}` }
-        ],
+        contents: [{
+          parts: [{
+            text: `${systemPrompt}\n\nReview the following study material and generate the scripts:\n\n${text}`
+          }]
+        }]
       }),
     });
 
     if (!response.ok) {
-      if (response.status === 429) {
-        return new Response(
-          JSON.stringify({ error: 'Rate limit exceeded, please try again in a moment' }),
-          { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-      if (response.status === 402) {
-        return new Response(
-          JSON.stringify({ error: 'AI credits exhausted' }),
-          { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
       const errorText = await response.text();
-      console.error('AI gateway error:', response.status, errorText);
+      console.error('Gemini API error:', response.status, errorText);
       return new Response(
-        JSON.stringify({ error: 'Failed to generate summaries' }),
+        JSON.stringify({ error: `Gemini API Error: ${response.status}` }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
+    const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
     if (!content) {
-      console.error('No content in AI response');
+      console.error('No content in Gemini response');
       return new Response(
         JSON.stringify({ error: 'No content generated' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -99,21 +122,24 @@ Example output format:
     // Parse the JSON array from the response
     let summaries: string[];
     try {
-      // Extract JSON array from the response (it might be wrapped in markdown code blocks)
-      const jsonMatch = content.match(/\[[\s\S]*\]/);
-      if (jsonMatch) {
-        summaries = JSON.parse(jsonMatch[0]);
-      } else {
-        // Fallback: split by newlines if not valid JSON
-        summaries = content.split('\n').filter((s: string) => s.trim().length > 10);
+      // Clean up potential markdown formatting
+      const cleanContent = content.replace(/```json\n?|\n?```/g, '').trim();
+      summaries = JSON.parse(cleanContent);
+
+      if (!Array.isArray(summaries)) {
+        throw new Error('Response is not an array');
       }
     } catch (e) {
-      console.error('Failed to parse AI response:', e);
-      // Fallback: use the raw content split by periods
-      summaries = content.split(/[.!?]+/).filter((s: string) => s.trim().length > 10).map((s: string) => s.trim() + '.');
+      console.error('Failed to parse Gemini response:', e);
+      console.log('Raw content:', content);
+
+      // Fallback: split by newlines if simple list
+      summaries = content.split('\n')
+        .map(s => s.replace(/^["-]|["-]$/g, '').trim()) // remove quotes/dashes
+        .filter(s => s.length > 10);
     }
 
-    console.log(`Generated ${summaries.length} summaries`);
+    console.log(`Gemini generated ${summaries.length} summaries`);
 
     return new Response(
       JSON.stringify({ summaries }),
