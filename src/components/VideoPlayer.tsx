@@ -13,25 +13,114 @@ interface VideoPlayerProps {
 export function VideoPlayer({ clips, onShuffle, onReset }: VideoPlayerProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
-  const [isMuted, setIsMuted] = useState(true);
+  const [isMuted, setIsMuted] = useState(false); // Start unmuted to hear TTS
   const [progress, setProgress] = useState(0);
+
+  // Word-by-word animation state
+  const [currentWordIndex, setCurrentWordIndex] = useState(0);
+  const [words, setWords] = useState<string[]>([]);
+
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const progressInterval = useRef<ReturnType<typeof setInterval>>();
+  const wordInterval = useRef<ReturnType<typeof setInterval>>();
+  const speechRef = useRef<SpeechSynthesisUtterance | null>(null);
 
   const currentClip = clips[currentIndex];
 
+  // Split content into words when clip changes
+  useEffect(() => {
+    if (currentClip?.content) {
+      const splitWords = currentClip.content.split(/\s+/).filter(w => w.length > 0);
+      setWords(splitWords);
+      setCurrentWordIndex(0);
+    }
+  }, [currentClip?.content]);
+
+  // Text-to-Speech function
+  const speakClip = useCallback((text: string) => {
+    console.log('speakClip called with:', { text: text?.substring(0, 30), isMuted });
+
+    // Cancel any ongoing speech
+    window.speechSynthesis.cancel();
+
+    if (!text || isMuted) {
+      console.log('Skipping TTS - text empty or muted');
+      return;
+    }
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 1.1; // Slightly faster for "brainrot" style
+    utterance.pitch = 1.0;
+    utterance.volume = 1.0;
+
+    // Try to use a more energetic voice if available
+    const voices = window.speechSynthesis.getVoices();
+    console.log('Available voices:', voices.length);
+
+    const preferredVoice = voices.find(v =>
+      v.name.includes('Samantha') ||
+      v.name.includes('Alex') ||
+      v.name.includes('Google') ||
+      v.lang.startsWith('en')
+    );
+    if (preferredVoice) {
+      utterance.voice = preferredVoice;
+      console.log('Using voice:', preferredVoice.name);
+    }
+
+    speechRef.current = utterance;
+    window.speechSynthesis.speak(utterance);
+    console.log('Speech synthesis started, speaking:', window.speechSynthesis.speaking);
+  }, [isMuted]);
+
+  // Handle mute changes for TTS
+  useEffect(() => {
+    if (isMuted) {
+      window.speechSynthesis.cancel();
+    } else if (isPlaying && currentClip?.content && currentWordIndex > 0) {
+      // Resume from current position (simplified: restart from beginning)
+      speakClip(currentClip.content);
+    }
+  }, [isMuted]);
+
+  // Start TTS when clip changes or playback starts
+  useEffect(() => {
+    if (isPlaying && currentClip?.content && !isMuted) {
+      speakClip(currentClip.content);
+    } else {
+      window.speechSynthesis.cancel();
+    }
+
+    return () => {
+      window.speechSynthesis.cancel();
+    };
+  }, [currentIndex, isPlaying, speakClip, currentClip?.content, isMuted]);
+
+  // Pause/resume speech synthesis with playback
+  useEffect(() => {
+    if (isPlaying) {
+      window.speechSynthesis.resume();
+    } else {
+      window.speechSynthesis.pause();
+    }
+  }, [isPlaying]);
+
   const goToNext = useCallback(() => {
+    window.speechSynthesis.cancel();
     if (currentIndex < clips.length - 1) {
       setCurrentIndex(prev => prev + 1);
       setProgress(0);
+      setCurrentWordIndex(0);
     }
   }, [currentIndex, clips.length]);
 
   const goToPrev = useCallback(() => {
+    window.speechSynthesis.cancel();
     if (currentIndex > 0) {
       setCurrentIndex(prev => prev - 1);
       setProgress(0);
+      setCurrentWordIndex(0);
     }
   }, [currentIndex]);
 
@@ -39,19 +128,46 @@ export function VideoPlayer({ clips, onShuffle, onReset }: VideoPlayerProps) {
   useEffect(() => {
     if (videoRef.current) {
       if (isPlaying) {
-        videoRef.current.play().catch(() => {});
+        videoRef.current.play().catch(() => { });
       } else {
         videoRef.current.pause();
       }
     }
   }, [isPlaying, currentIndex]);
 
-  // Control video mute
+  // Control video mute (background video is always muted for TTS clarity)
   useEffect(() => {
     if (videoRef.current) {
-      videoRef.current.muted = isMuted;
+      videoRef.current.muted = true; // Always mute background video
     }
-  }, [isMuted]);
+  }, []);
+
+  // Word-by-word animation timer
+  useEffect(() => {
+    if (isPlaying && words.length > 0) {
+      // Calculate time per word - speed up to LEAD the voice
+      // TTS at 1.1x rate speaks ~3.5 words/sec = ~285ms per word
+      // We want text to appear slightly BEFORE it's spoken
+      const msPerWord = (currentClip.duration * 1000) / words.length;
+      // Cap at speed (min 180ms, max 320ms per word) - slightly ahead of voice
+      const clampedMs = Math.max(180, Math.min(320, msPerWord * 0.9));
+
+      wordInterval.current = setInterval(() => {
+        setCurrentWordIndex(prev => {
+          if (prev >= words.length - 1) {
+            return prev; // Stay at last word
+          }
+          return prev + 1;
+        });
+      }, clampedMs);
+    }
+
+    return () => {
+      if (wordInterval.current) {
+        clearInterval(wordInterval.current);
+      }
+    };
+  }, [isPlaying, words.length, currentClip?.duration]);
 
   // Progress timer for clip duration
   useEffect(() => {
@@ -93,7 +209,7 @@ export function VideoPlayer({ clips, onShuffle, onReset }: VideoPlayerProps) {
     if (!container) return;
 
     let touchStartY = 0;
-    
+
     const handleTouchStart = (e: TouchEvent) => {
       touchStartY = e.touches[0].clientY;
     };
@@ -117,10 +233,15 @@ export function VideoPlayer({ clips, onShuffle, onReset }: VideoPlayerProps) {
     };
   }, [goToNext, goToPrev]);
 
+  // Load voices on mount (needed for some browsers)
+  useEffect(() => {
+    window.speechSynthesis.getVoices();
+  }, []);
+
   if (!currentClip) return null;
 
   return (
-    <div 
+    <div
       ref={containerRef}
       className="relative w-full max-w-sm mx-auto aspect-[9/16] rounded-3xl overflow-hidden glass animate-scale-in"
     >
@@ -132,7 +253,7 @@ export function VideoPlayer({ clips, onShuffle, onReset }: VideoPlayerProps) {
         className="absolute inset-0 w-full h-full object-cover"
         autoPlay
         loop
-        muted={isMuted}
+        muted
         playsInline
       />
       <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/80" />
@@ -140,29 +261,48 @@ export function VideoPlayer({ clips, onShuffle, onReset }: VideoPlayerProps) {
       {/* Progress Bars */}
       <div className="absolute top-4 left-4 right-4 flex gap-1.5 z-20">
         {clips.map((_, index) => (
-          <div 
+          <div
             key={index}
             className="flex-1 h-1 bg-white/30 rounded-full overflow-hidden"
           >
-            <div 
+            <div
               className={cn(
                 'h-full bg-white transition-all duration-100',
                 index < currentIndex && 'w-full',
                 index > currentIndex && 'w-0'
               )}
-              style={{ 
-                width: index === currentIndex ? `${progress}%` : undefined 
+              style={{
+                width: index === currentIndex ? `${progress}%` : undefined
               }}
             />
           </div>
         ))}
       </div>
 
-      {/* Content */}
+      {/* Rapid-Fire Word Display */}
       <div className="absolute inset-0 flex items-center justify-center p-8 z-10">
-        <p className="text-white text-xl md:text-2xl font-display font-semibold text-center leading-relaxed text-glow animate-fade-in">
-          {currentClip.content}
-        </p>
+        <div className="text-center">
+          {words.map((word, index) => (
+            <span
+              key={`${currentIndex}-${index}`}
+              className={cn(
+                'inline-block mx-1 font-display font-bold transition-all duration-150',
+                index <= currentWordIndex ? 'opacity-100' : 'opacity-0 scale-50',
+                index === currentWordIndex
+                  ? 'text-3xl md:text-4xl text-white scale-110 text-glow'
+                  : 'text-xl md:text-2xl text-white/70'
+              )}
+              style={{
+                transitionDelay: index <= currentWordIndex ? '0ms' : '0ms',
+                textShadow: index === currentWordIndex
+                  ? '0 0 20px rgba(255,255,255,0.8), 0 0 40px rgba(139,92,246,0.6)'
+                  : '0 2px 4px rgba(0,0,0,0.5)'
+              }}
+            >
+              {word}
+            </span>
+          ))}
+        </div>
       </div>
 
       {/* Bottom Controls */}
@@ -207,7 +347,7 @@ export function VideoPlayer({ clips, onShuffle, onReset }: VideoPlayerProps) {
 
       {/* Side Navigation Hints */}
       <div className="absolute right-4 top-1/2 -translate-y-1/2 flex flex-col gap-2 z-20">
-        <button 
+        <button
           onClick={goToPrev}
           disabled={currentIndex === 0}
           className={cn(
@@ -217,7 +357,7 @@ export function VideoPlayer({ clips, onShuffle, onReset }: VideoPlayerProps) {
         >
           <ChevronUp className="w-5 h-5 text-white" />
         </button>
-        <button 
+        <button
           onClick={goToNext}
           disabled={currentIndex === clips.length - 1}
           className={cn(

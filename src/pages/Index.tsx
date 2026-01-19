@@ -1,7 +1,6 @@
 import { useState, useCallback } from 'react';
 import { Header } from '@/components/Header';
 import { FileUpload } from '@/components/FileUpload';
-import { DurationSelector } from '@/components/DurationSelector';
 import { GenerateButton } from '@/components/GenerateButton';
 import { VideoPlayer } from '@/components/VideoPlayer';
 import { StatsBar } from '@/components/StatsBar';
@@ -14,7 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 export default function Index() {
   const [fileContent, setFileContent] = useState<string>('');
   const [fileName, setFileName] = useState<string>('');
-  const [duration, setDuration] = useState<VideoDuration>(30);
+  const duration: VideoDuration = 30; // Fixed duration
   const [clips, setClips] = useState<VideoClip[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [uploadState, setUploadState] = useState<UploadState>({
@@ -103,11 +102,6 @@ export default function Index() {
                     Selected: <span className="text-white font-medium">{fileName}</span>
                   </p>
                 )}
-              </section>
-
-              {/* Duration Selector */}
-              <section className={`transition-opacity duration-300 ${isReady ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}>
-                <DurationSelector selected={duration} onSelect={setDuration} />
               </section>
 
               {/* Generate Button */}
